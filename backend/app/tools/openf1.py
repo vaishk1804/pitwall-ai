@@ -90,3 +90,168 @@ async def get_pit_stops(session_key: int, driver_number: int | None = None) -> l
   if driver_number:
     params["driver_number"] = driver_number
   return await _get("/pit",params)
+
+async def get_stints(session_key: int, driver_number: int | None = None) -> list[dict]:
+  """
+  Get tyre stint data for a session - which compound was used, which
+  laps the stint spanned, and how worn the tyres were at the start of the stint.
+  """
+  params: dict[str,Any] = {"session_key": session_key}
+  if driver_number:
+    params["driver_number"] = driver_number
+  return await _get("/stints",params)
+
+async def get_race_control(session_key: int) -> list[dict]:
+  """
+  Get race control messages for a session - safety car deployments,
+  flags (yellow, red, chequered), penalties, and other official incidents.
+  """
+  return await _get("/race_control",{"session_key":session_key})
+
+async def get_positions(
+    session_key: int,
+    driver_number: int | None = None,
+) -> list[dict]:
+  """
+  Get position data throughout a race session - every time a driver's 
+  position changed, with a timestamp.
+
+  This returns one row per position CHANGE, not one row per lap - to find the most recent row with a date at or before that moment.
+  """
+  params: dict[str, Any] = {"session_key": session_key}
+  if driver_number:
+    params["driver_number"] = driver_number
+  return await _get("/position",params)
+
+async def get_intervals(session_key: int, driver_number: int | None = None) -> list[dict]:
+  """
+  Get gap-to-leader and interval-to-car-ahead data for drivers during
+  a race, updated approximately every 4 seconds.
+
+  Per OpenF1's documentation, this endpoint only returns data for
+  RACE sessions.
+  """
+  params: dict[str,Any] = {"session_key":session_key}
+  if driver_number:
+    params["driver_number"] = driver_number
+  return await _get("/intervals",params)
+
+# Tool manifest - defines the tools Claude can call via Anthropic's
+# tool-use API. Each "description"
+# filed is read directly by the model to decide which tool fits a given question,
+# so wording here has a real, observable effect on which tool Claude picks.
+
+TOOL_DEFINITIONS =[
+  {
+    "name": "get_sessions",
+    "description": "Find F1 sessions (race, qualifying, practice) by year and optionally country. Returns session_key needed for other tools.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "year": {"type": "integer", "description": "Season year, e.g. 2024"},
+        "country_name": {"type": "string", "description": "Optional country, e.g. 'Monaco'"},
+      },
+      "required": ["year"],
+    },
+  },
+  {
+    "name": "get_drivers",
+    "description": "Get driver information for a session or season. Pass EITHER session_key OR year, not both - OpenF1 returns no results if both are provided together.",
+    "input_schema": {
+      "type": "object",
+      "properties":{
+      "session_key": {"type":"integer", "description": "Session key from get_sessions"},
+      "year": {"type": "integer", "description": "Season year"},
+    },
+    "required": ["year"],
+  },
+  },
+{
+  "name": "get_laps",
+  "description": "Get lap timing data including sector times and compound for a session. Requires session_key.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "session_key": {"type":"integer"},
+      "driver_number": {"type":"integer", "description": "Optional - filter to one driver"},
+      "lap_number": {"type": "integer", "description": "Optional - filter to one lap"},
+    },
+    "required": ["session_key"],
+  },
+},
+{
+  "name": "get_pit_stops",
+  "description": "Get pit stop records including lap number and pit duration.",
+  "input_schema":{
+    "type": "object",
+    "properties": {
+      "session_key": {"type":"integer"},
+      "driver_number": {"type":"integer","description":"Optional"},
+    },
+    "required": ["session_key"],
+  },
+},
+{
+   "name": "get_stints",
+        "description": "Get tyre stint data - compound, stint number, lap ranges.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "session_key": {"type": "integer"},
+                "driver_number": {"type": "integer", "description": "Optional"},
+            },
+            "required": ["session_key"],
+        },
+},
+ {
+        "name": "get_race_control",
+        "description": "Get race director messages, safety car periods, flags, and penalties for a session.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "session_key": {"type": "integer"},
+            },
+            "required": ["session_key"],
+        },
+    },
+    {
+        "name": "get_positions",
+        "description": "Get position-change events for a session, not lap-by-lap positions. Use to find when overtakes happened.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "session_key": {"type": "integer"},
+                "driver_number": {"type": "integer", "description": "Optional"},
+            },
+            "required": ["session_key"],
+        },
+    },
+    {
+        "name": "get_intervals",
+        "description": "Get gap-to-leader and interval data for drivers during a race. Only works for Race sessions - calling this with a Qualifying or Practice session_key will fail with an error, not return empty data.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "session_key": {"type": "integer"},
+                "driver_number": {"type": "integer", "description": "Optional"},
+            },
+            "required": ["session_key"],
+        },
+    },
+]
+
+# Maps each tool name to its actula Python function. The agent loop
+# recieves a tool_use block from Calude containing a "name" string
+# and looks it up here to find which function to
+# actually call
+
+TOOL_DISPATCH ={
+  "get_sessions": get_sessions,
+  "get_drivers": get_drivers,
+  "get_laps": get_laps,
+  "get_pit_stops": get_pit_stops,
+  "get_stints": get_stints,
+  "get_race_control": get_race_control,
+  "get_positions": get_positions,
+  "get_intervals": get_intervals,
+}
